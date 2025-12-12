@@ -1,0 +1,338 @@
+---
+title: "RQ1_analysis"
+author: "Nadira Mahamane"
+date: "2025-11-29"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+rm(list=ls(all=TRUE)) 
+#change working directory path to wherever you are storing your class files
+setwd("/Users/nadira/Gatech/AE6721")
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(psych)
+library(reshape2)
+library(tidyverse)
+library(multcomp)
+library(MASS)
+library(clinfun)
+library(pastecs)
+library(pgirmess)
+library(RVAideMemoire)
+library(rstatix)
+```
+
+### 1.	Load up the RQ1.csv
+```{r, warning=FALSE, message=FALSE}
+df <- read_csv("Data_Files/RQ1.csv")
+head(df)
+```
+### Convert CAD interface as a factor
+```{r}
+df$CAD_Interface <- factor(df$CADInterface,
+                           levels = c("Onshape", "Inventor", "Tinkercad"))
+```
+
+### DV1. Task Completion 
+Comparing pass/fail rates across the 3 CAD interfaces
+
+```{r}
+cochran.qtest(TaskCompletion ~ CADInterface | ID, data=df)
+pairwise_mcnemar_test(df, TaskCompletion ~ CADInterface | ID, p.adjust.method = "bonferroni")
+
+```
+Plot for DV1
+
+```{r}
+dv1_summary <- df %>%
+  group_by(CADInterface) %>%
+  summarise(
+    proportion = mean(TaskCompletion),
+    n = n(),
+    se = sqrt((proportion * (1 - proportion)) / n),
+    ci95 = 1.96 * se
+  )
+
+ggplot(dv1_summary, aes(x = CADInterface, y = proportion)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = proportion - ci95,
+                    ymax = proportion + ci95),
+                width = 0.15) +
+  scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+  labs(
+    title = "DV1 – Task Completion Rate by CAD Interface",
+    x = "CAD Interface",
+    y = "Proportion Completed"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+Since cochran p-value <=0.05(significant diff in pass/fail rate), at least one interface differs in pass/fail performance. The estimated completion rate result suggest that Tinkercad is likely the outlier with lower performance.
+We ran the pairwise McNemar Tests for each pair. Pairwise McNemar tests with Bonferroni correction indicated no significant differences between any two interfaces (all p_adj > .49).
+The comparison between Inventor and Onshape could not be computed due to zero discordant pairs. Reasons: low sanple sizes? 
+
+### DV2. Task Performance
+Checking normality for pair differences
+```{r}
+df %>% group_by(CADInterface) %>% shapiro_test(TaskPerformance)
+ggplot(df, aes(sample = TaskPerformance)) +
+  stat_qq() +
+  stat_qq_line() +
+  facet_wrap(~ CADInterface)
+```
+
+
+Since Tinkercad data is non normal, we are going to perform the Friedman Test, followed by a wilcoxon test
+
+```{r}
+friedman_test(TaskPerformance ~ CADInterface | ID, data=df)
+
+df %>% wilcox_test(TaskPerformance ~ CADInterface, paired=TRUE, p.adjust.method="bonferroni")
+
+```
+
+Plot for DV2
+```{r}
+# DV2 summary
+dv2_summary <- df %>%
+  group_by(CADInterface) %>%
+  summarise(
+    mean_score = mean(TaskPerformance),
+    sd_score   = sd(TaskPerformance),
+    n = n(),
+    se = sd_score / sqrt(n),
+    ci95 = 1.96 * se
+  )
+
+ggplot(dv2_summary, aes(x = CADInterface, y = mean_score)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = mean_score - ci95,
+                    ymax = mean_score + ci95),
+                width = 0.15) +
+  labs(
+    title = "DV2 – Task Performance by CAD Interface",
+    x = "CAD Interface",
+    y = "Mean Task Performance"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+The Friedman test(p=0.01831564) shows a statistically significant difference in task performance across the three CAD interfaces. This means at least one interface produces different task performance scores. With the wilcoxon test, no pairwise differences reach significance after correction.
+A Friedman test showed a statistically significant effect of CAD interface on task performance,
+χ²(2) = 6.00, p = .01.
+Post-hoc pairwise Wilcoxon signed-rank tests with Holm correction revealed no significant differences between interfaces (all p_adj > .34).
+The comparison between Inventor and Onshape could not be computed due to zero within-subject rank differences, indicating identical performance across these two interfaces.
+
+### DV3. Completion Time
+Let's check the distribution 
+```{r}
+df %>% group_by(CADInterface) %>% shapiro_test(CompletionTime)
+```
+
+The repeated-measures data are not normally distributed because one condition violates normality so we will perform a Friedman test. 
+
+```{r}
+friedman_test(CompletionTime ~ CADInterface | ID, data=df)
+```
+
+Plot for DV3
+```{r}
+# DV3 summary
+dv3_summary <- df %>%
+  group_by(CADInterface) %>%
+  summarise(
+    mean_time = mean(CompletionTime),
+    sd_time   = sd(CompletionTime),
+    n = n(),
+    se = sd_time / sqrt(n),
+    ci95 = 1.96 * se
+  )
+
+ggplot(dv3_summary, aes(x = CADInterface, y = mean_time)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = mean_time - ci95,
+                    ymax = mean_time + ci95),
+                width = 0.15) +
+  labs(
+    title = "DV3 – Completion Time by CAD Interface",
+    x = "CAD Interface",
+    y = "Mean Completion Time (seconds)"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+There is no statistically significant difference in completion time across the three CAD interfaces. Therefore, the time it took participants to complete the task did not differ between Inventor, Onshape, and Tinkercad.
+
+
+### DV4- Error Count
+Check overdispersion, Random-effects model (GLMM) cannot be fit due to small sample → GLM is correct
+```{r}
+glm_poisson <- glm(errors ~ CAD_Interface, 
+                   data = df, 
+                   family = poisson)
+summary(glm_poisson)
+
+sum(residuals(glm_poisson, type="pearson")^2) / glm_poisson$df.residual
+
+exp(coef(glm_poisson))
+
+```
+A Poisson regression model was used to examine whether error count differed across CAD interfaces. The model showed no significant effect of interface on error frequency,
+Onshape vs. Inventor: b = 0.057, SE = 0.338, z = 0.169, p = .866;
+Tinkercad vs. Inventor: b = 0.057, SE = 0.338, z = 0.169, p = .866.
+
+Incident rate ratios indicated that Onshape (IRR = 1.06) and Tinkercad (IRR = 1.06) produced virtually identical error rates compared to Inventor.
+The dispersion statistic (0.61) suggested no overdispersion, confirming appropriate use of the Poisson model.
+
+Thus, error counts did not significantly differ across CAD interfaces
+
+#### Plot for DV4
+```{r}
+# Compute means + CI for error counts
+dv4_summary <- df %>%
+  group_by(CADInterface) %>%
+  summarise(
+    mean_errors = mean(errors),
+    sd_errors   = sd(errors),
+    n           = n(),
+    se          = sd_errors / sqrt(n),
+    ci95        = 1.96 * se
+  )
+
+# Plot
+ggplot(dv4_summary, aes(x = CADInterface, y = mean_errors)) +
+  geom_col(width = 0.6) +
+  geom_errorbar(aes(ymin = mean_errors - ci95,
+                    ymax = mean_errors + ci95),
+                width = 0.15) +
+  labs(
+    title = "DV4 – Error Count by CAD Interface",
+    x = "CAD Interface",
+    y = "Mean Error Count"
+  ) +
+  theme_minimal(base_size = 14)
+ggplot(df, aes(x = CADInterface, y = errors)) +
+  geom_jitter(width = 0.1, alpha = 0.7) +
+  stat_summary(fun = mean, geom = "point", size = 4, color = "red") +
+  labs(title = "DV4 – Individual Error Counts by Interface",
+       y = "Error Count") +
+  theme_minimal(base_size = 14)
+
+
+```
+### DV5. Usability 
+Compute SUS Total 
+```{r}
+df <- df %>%
+  mutate(SUS_Total = SUS_1 + SUS_2 + SUS_3 + SUS_4 + SUS_5 +
+                    SUS_6 + SUS_7 + SUS_8 + SUS_9 + SUS_10)
+```
+Check for normality 
+```{r}
+df %>% group_by(CAD_Interface) %>% shapiro_test(SUS_Total)
+```
+Not normal so performing Friedman Test 
+```{r}
+friedman_test(SUS_Total ~ CAD_Interface | ID, data=df)
+```
+#### Plot for DV5
+
+A Friedman test was conducted to compare SUS scores across three CAD interfaces: Onshape, Inventor, and Tinkercad. The test indicated no significant difference among the three interfaces (χ²(2) = 1.6, p = 0.449, Kendall’s W = 0.16). This suggests that participants rated the usability of all three CAD interfaces similarly, with no one tool showing a clear advantage in SUS scores.
+
+### DV6. Software Preference - 
+No need, we can see from the data that participants overall prefer Inventor over the other interfaces. ()
+
+
+### DV9. Workload (NASA TLX)
+```{r}
+df <- df %>%
+  mutate(TLX_Total = TLX_1 + TLX_2 + TLX_3 + TLX_4 + TLX_5 + TLX_6)
+result <- friedman_test(TLX_Total ~ CADInterface | ID, data=df)
+chi_sq <- result$statistic
+n <- result$n
+k <- result$df + 1  # df = k-1
+
+# Kendall's W
+kendall_w <- chi_sq / (n * (k - 1))
+kendall_w
+```
+Friedman test showed no significant difference across CAD interfaces (p = 0.091), but moderate effect size (W = 0.46) suggests a trend: participants may perceive Tinkercad as slightly more or less demanding.
+
+### DV10. CSI 
+```{r}
+df <- df %>%
+  mutate(CSI_Total = CSI_1 + CSI_2 + CSI_3 + CSI_4 + CSI_5)
+csi_result <- friedman_test(CSI_Total ~ CAD_Interface | ID, data=df)
+chi_sq <- csi_result$statistic
+n <- csi_result$n
+k <- csi_result$df + 1  # df = k-1
+
+# Kendall's W
+kendall_w <- chi_sq / (n * (k - 1))
+kendall_w
+```
+A Friedman test was conducted to compare Creativity Support Index (CSI) scores across three CAD interfaces: Onshape, Inventor, and Tinkercad. The test did not reach statistical significance (χ²(2) = 3.6, p = 0.165, Kendall’s W = 0.44), indicating that participants rated the creativity support of the three tools similarly. However, the moderate effect size suggests a possible trend that could be explored with a larger sample.
+
+### DV7-DV8. Confidence + Future Use
+```{r}
+df_pref <- read_csv("Data_Files/RQ1_pref.csv")
+head(df_pref)
+```
+```{r}
+df_pref %>%
+  summarise(
+    median_confidence = median(confidence),
+    IQR_confidence = IQR(confidence),
+    median_futureUse = median(futureUse),
+    IQR_futureUse = IQR(futureUse)
+  )
+
+```
+
+```{r}
+df_long <- df_pref %>%
+  pivot_longer(cols = c(confidence, futureUse), 
+               names_to = "Measure", values_to = "Rating")
+
+ggplot(df_long, aes(x = Measure, y = Rating)) +
+  geom_boxplot(fill = "skyblue") +
+  geom_jitter(width = 0.1, size = 2) +
+  scale_y_continuous(breaks = 1:7) +
+  labs(y = "Rating (1-7)", x = "Measure", title = "Confidence and Future Use Ratings")
+```
+```{r}
+wilcox.test(df_pref$confidence, df_pref$futureUse, paired = TRUE, alternative = "two.sided")
+```
+```{r}
+w_test <- wilcox.test(df_pref$confidence, df_pref$futureUse, paired = TRUE, exact = FALSE)
+Z <- qnorm(w_test$p.value/2)  # approximate
+r <- abs(Z) / sqrt(nrow(df))
+r
+```
+A paired Wilcoxon signed-rank test was conducted to compare participants’ confidence in using Inventor and their likelihood of future use. The difference was not statistically significant (V = 13.5, p = 0.134), though the effect size was moderate (r = 0.35), suggesting a tendency for participants to feel more confident than likely to use the tool in the future.
+
+```{r}
+df <- data.frame(
+  Participant = 1:6,
+  confidence = c(4, 4, 5, 5, 4, 7),
+  futureUse = c(5, 2, 4, 1, 2, 5)
+)
+
+# Transform to long format for ggplot
+df_long <- df %>%
+  pivot_longer(cols = c(confidence, futureUse), 
+               names_to = "Measure", values_to = "Rating")
+
+# Plot
+ggplot(df_long, aes(x = Measure, y = Rating, group = Participant)) +
+  geom_point(size = 3, color = "blue") +            # points
+  geom_line(aes(color = factor(Participant)), size = 1) +  # lines connecting paired points
+  scale_y_continuous(breaks = 1:7, limits = c(0,7)) +
+  labs(x = "", y = "Rating (1-7)", 
+       title = "Confidence vs Future Use Ratings for Inventor",
+       color = "Participant") +
+  theme_minimal() +
+  theme(legend.position = "none")           
+```

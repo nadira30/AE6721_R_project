@@ -1,0 +1,80 @@
+---
+title: "RQ2_analysis"
+author: "Nadira Mahamane"
+date: "2025-11-29"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+rm(list=ls(all=TRUE)) 
+#change working directory path to wherever you are storing your class files
+setwd("/Users/nadira/Gatech/AE6721")
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(psych)
+library(reshape2)
+library(tidyverse)
+library(multcomp)
+library(MASS)
+library(clinfun)
+library(pastecs)
+library(pgirmess)
+library(lme4)
+```
+
+### 1.	Load up the RQ1.csv
+```{r, warning=FALSE, message=FALSE}
+df <- read_csv("Data_Files/RQ2.csv")
+head(df)
+```
+
+##Data prep
+
+```{r}
+df$CADInterface <- as.factor(df$CADInterface)
+df$PriorExperience <- as.factor(df$PriorExperience)
+df$ID <- as.factor(df$ID)
+```
+```{r}
+df$TLX_total <- rowMeans(df[, c("TLX_1","TLX_2","TLX_3","TLX_4","TLX_5","TLX_6")])
+```
+# Visualize overall data
+```{r}
+df %>% group_by(CADInterface) %>%
+  summarise(
+    completion_rate = mean(TaskCompletion),
+    mean_time = mean(Completiontime),
+    median_time = median(Completiontime),
+    mean_TLX = mean(TLX_total)
+)
+ggplot(df, aes(x = CADInterface, y = Completiontime)) + geom_boxplot()
+
+```
+## Task completion, completime time, error count, NASA TLX -> all evaluated in RQ1
+This model attempted to evaluate: Differences in completion time among CAD interfaces, Differences in completion time based on prior experience, Whether the effect of experience differs by interface. 
+```{r}
+model_exp_time <- lmer(Completiontime ~ CADInterface * PriorExperience + (1|ID),
+                        data = df)
+anova(model_exp_time)
+
+```
+Having previous exposure to the tool did not significantly reduce completion time. This suggests:
+The tasks were likely simple enough that prior experience gave only minimal advantage OR The sample size was too small to capture the effect. Because prior experience occurred only for Inventor, the model could not evaluate whether experience matters differently for different tools. 
+
+Conclusion: Although the mixed-effects model detected no statistically significant differences in completion time across CAD interfaces or experience levels, this does not necessarily imply the interfaces are equivalent. The lack of significance is partly due to: small sample size (n = 6), minimal variability in prior experience, incomplete balance of experience across interfaces. Therefore, these results should be interpreted cautiously.
+Nevertheless, the findings suggest that all three CAD tools posed similar timing challenges to novice users, and that prior experience did not reliably reduce task duration in this dataset.
+
+```{r}
+ggplot(df, aes(x = CADInterface, y = Completiontime, fill = PriorExperience)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "Completion Time by CAD Interface and Prior Experience",
+    x = "CAD Interface",
+    y = "Completion Time (seconds)",
+    fill = "Prior Experience"
+  )
+```
+The boxplot shows that Inventor is the only CAD tool for which participants had variable prior experience, and participants with prior experience tended to complete the task faster. For Onshape and Tinkercad, all participants were novices, and completion times were concentrated near the time limit for Tinkercad, indicating difficulty completing the task. Overall, differences in completion times among CAD interfaces appear modest, aligning with the non-significant ANOVA results.
+## Qualitative Data Analysis

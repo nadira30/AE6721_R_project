@@ -1,0 +1,102 @@
+---
+title: "RQ3"
+author: "Nadira Mahamane"
+date: "2025-12-07"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+rm(list=ls(all=TRUE)) 
+#change working directory path to wherever you are storing your class files
+setwd("/Users/nadira/Gatech/AE6721")
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(psych)
+library(reshape2)
+library(tidyverse)
+library(multcomp)
+library(MASS)
+library(clinfun)
+library(pastecs)
+library(pgirmess)
+library(lme4)
+library(ordinal)
+library(emmeans)
+```
+
+### 1.	Load up the RQ1.csv
+```{r, warning=FALSE, message=FALSE}
+df <- read_csv("Data_Files/RQ3.csv")
+head(df)
+```
+### Determine which CAD interface best supports creative ideation and early-stage design, based on CSI scores, while accounting for the fact that:
+
+Each participant used all 3 interfaces → repeated measures, CSI is ordinal, Participants differ in prior experience → between-subject variable
+This means we cannot treat CSI like a simple numeric variable and run ANOVA—this would violate assumptions.
+The most statistically appropriate method is Cumulative Link Mixed Model (CLMM). 
+```{r}
+df$CSI_total <- rowSums(df[, c("CSI_1","CSI_2","CSI_3","CSI_4","CSI_5")])
+df$ID <- factor(df$ID)
+df$CADInterface <- factor(df$CADInterface)
+df$PriorExperience <- factor(df$PriorExperience)
+```
+
+```{r}
+model <- lmer(CSI_total ~ CADInterface * PriorExperience + (1 | ID),
+              data = df)
+
+summary(model)
+```
+
+```{r}
+df$predicted <- predict(model)
+ggplot(df, aes(x = CADInterface, y = predicted, 
+               color = PriorExperience, group = PriorExperience)) +
+  stat_summary(fun = mean, geom = "point", size = 3, position = position_dodge(.2)) +
+  stat_summary(fun = mean, geom = "line", position = position_dodge(.2)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = .1, 
+               position = position_dodge(.2)) +
+  theme_minimal() +
+  labs(title = "Model-Predicted CSI by Interface and Experience",
+       y = "Predicted CSI_total",
+       x = "CAD Interface")
+```
+Conclusion: The analysis reveals markedly disparate user satisfaction levels across the three CAD platforms, with Tinkercad demonstrating substantially elevated Customer Satisfaction Index (CSI) scores relative to both competitors. Most notably, Tinkercad exhibits a mean difference of +156.84 points above Inventor (SE ≈ 66, t ≈ 2.39), representing a large and statistically robust effect that indicates genuine superiority in user experience rather than mere sampling variation. Conversely, Onshape's advantage over Inventor (+33.5 points) fails to achieve statistical significance (t ≈ 0.51), suggesting this observed difference likely reflects chance fluctuation rather than a systematic performance differential. The negative association between prior CAD experience and satisfaction ratings (β = –36 points, t ≈ –0.497) warrants cautious interpretation; while the direction suggests experienced users may adopt more critical evaluation standards, the substantial standard error and negligible t-statistic preclude confident inference about this relationship. Collectively, these findings establish Tinkercad's marked performance advantage as the sole statistically defensible conclusion, while highlighting the need for larger sample sizes or refined measurement approaches to clarify the remaining uncertain effects.
+
+Observation: The data structure does NOT support estimation of the interaction because: we have only 6 participants, PriorExperience has both levels (Y and N) but within each participant, PriorExperience does not vary, and we only have one Y per participant ID (or inconsistent patterns). Therefore, the model cannot estimate CADInterface * PriorExperience correctly and R is automatically dropping the interaction terms.
+To fix this we could run a simple model without the interaction term. 
+```{r}
+model2 <- lmer(CSI_total ~ CADInterface + PriorExperience + (1 | ID), data = df)
+summary(model2)
+```
+```{r}
+emm <-emmeans(model2, pairwise ~ CADInterface)
+emm <- emmeans(model2, ~ CADInterface)
+plot(emm, comparisons = TRUE) +
+  ggplot2::theme_minimal()
+
+```
+A linear mixed-effects model was used to examine the effect of CAD interface and prior experience on Creativity Support Index (CSI) scores. The model revealed a substantial main effect of interface. Estimated marginal means indicated that Tinkercad (M = 351) produced much higher CSI scores than both Onshape (M = 228) and Inventor (M = 194).
+
+Post-hoc pairwise comparisons showed no significant difference between Inventor and Onshape (p = .88). The comparison between Onshape and Tinkercad was marginally significant (p = .052), and Tinkercad vs. Inventor showed a large but non-significant difference (p = .105), reflecting the limited sample size.
+
+Prior experience was not a significant predictor of CSI (p > .40), suggesting that novice and non-novice users perceived creativity support similarly.
+
+Overall, the results indicate that Tinkercad provided the strongest support for creative ideation and early-stage design decisions, compared with Inventor and Onshape.
+
+### Analyze preference for prior experience 
+```{r}
+table_pref <- table(df$CADInterface, df$Preference)
+chisq.test(table_pref)
+```
+Analyze preference for prior experience 
+Preference was collected as a nominal variable indicating which CAD tool participants preferred for early-stage design. However, all participants selected Inventor as their preferred tool in every condition. This produced a contingency table with a single category in the preference variable.
+
+Because there was no variation in responses:
+
+The chi-square test returned X² = 0, p = 1, indicating identical distributions across CAD interfaces.
+
+The Mantel–Haenszel test could not be performed because one dimension of the table had only a single category.
+
+This unanimous preference suggests that participants strongly favored Inventor, regardless of which CAD interface they used during the study.
